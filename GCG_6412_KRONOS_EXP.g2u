@@ -1,0 +1,110 @@
+﻿Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.Try
+'TJS, July 2021
+'Customer: V-TEK, Inc.
+'Quote: 12817
+'Business Case: The customer is needing a payroll export for Kronos Bank.
+
+F.Intrinsic.Control.If(V.Caller.Hook,<>,"15290")
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.CallSub(GetData)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(Error,"SubRoutine",V.Ambient.CurrentSubroutine,"eNumber",V.Ambient.ErrorNumber,"eDescription",V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.GetData.Start
+F.Intrinsic.Control.Try
+V.Local.sSQL.Declare
+V.Local.sDate.Declare
+V.Local.sTime.Declare
+
+F.Intrinsic.String.Left(V.Passed.888888,8,V.Local.sDate)
+F.Intrinsic.String.Mid(V.Passed.888888,9,6,V.Local.sTime)
+
+F.ODBC.Connection!conts.OpenCompanyConnection
+'Regualr hours - RT+OT+DT
+F.Intrinsic.String.Build("Select 'VTK1' as 'Company Short Name',EMPLOYEE as 'Employee Id','Regular' as 'Pay Statement Type','E01' as 'E/D/T External Id',Sum(Cast(HOURS as float)) as 'E Hours' from PYRL_LABOR_XFER where TYPE in ('RT','OT','DT') and RUN_CYMD = '{0}' and RUN_TIME = '{1}' group by EMPLOYEE order by EMPLOYEE;",V.Local.sDate,V.Local.sTime,V.Local.sSQL)
+
+F.Data.DataTable.CreateFromSQL("dtE01","conts",V.Local.sSQL,True)
+'Overtime hours
+F.Intrinsic.String.Build("Select 'VTK1' as 'Company Short Name',EMPLOYEE as 'Employee Id','Regular' as 'Pay Statement Type','E11' as 'E/D/T External Id',Sum(Cast(HOURS as float)) as 'E Hours' from PYRL_LABOR_XFER where TYPE = 'OT' and RUN_CYMD = '{0}' and RUN_TIME = '{1}' group by EMPLOYEE,EC order by EMPLOYEE;",V.Local.sDate,V.Local.sTime,V.Local.sSQL)
+
+F.Data.DataTable.CreateFromSQL("dtE11","conts",V.Local.sSQL,True)
+
+'Absentee records
+F.Intrinsic.String.Build("Select 'VTK1' as 'Company Short Name',EMPLOYEE as 'Employee Id','Regular' as 'Pay Statement Type','E'+EC as 'E/D/T External Id',Sum(Cast(HOURS as float)) as 'E Hours' from PYRL_LABOR_XFER where TYPE not in ('RT','OT','DT') and RUN_CYMD = '{0}' and RUN_TIME = '{1}' group by EMPLOYEE,EC order by EMPLOYEE;",V.Local.sDate,V.Local.sTime,V.Local.sSQL)
+
+F.Data.DataTable.CreateFromSQL("dtAbsentee","conts",V.Local.sSQL,True)
+
+F.Data.DataTable.Merge("dtE11","dtE01",True,2)
+F.Data.DataTable.Merge("dtAbsentee","dtE01",True,2)
+
+F.Data.DataView.Create("dtE01","dvResort",22,"","[Employee Id] asc")
+
+F.Data.DataView.ToDataTable("dtE01","dvResort","dtOutput",True)
+
+F.Data.DataTable.Close("dtE11")
+F.Data.DataTable.Close("dtAbsentee")
+F.Data.DataView.Close("dtE01","dvResort")
+F.Data.DataTable.Close("dtE01")
+
+F.ODBC.Connection!conts.Close
+
+F.Intrinsic.Control.CallSub(ExportFile)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(Error,"SubRoutine",V.Ambient.CurrentSubroutine,"eNumber",V.Ambient.ErrorNumber,"eDescription",V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.GetData.End
+
+Program.Sub.ExportFile.Start
+F.Intrinsic.Control.Try
+V.Local.sPath.Declare
+V.Local.sSQL.Declare
+
+F.Intrinsic.UI.ShowSaveFileDialog("","csv|*.csv",V.Local.sPath)
+
+F.Intrinsic.Control.If(V.Local.sPath,=,"***CANCEL***")
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.Split(V.Local.sPath,".",V.Local.sPath)
+
+F.Intrinsic.String.Build("{0}.csv",V.Local.sPath(0),V.Local.sPath)
+
+F.Data.Datatable.SaveToCSV("dtOutput",V.Local.sPath.Trim,True)
+
+F.Data.DataTable.Close("dtOutput")
+
+F.Intrinsic.String.Build("File saved to {0}",V.Local.sPath.Trim,V.Local.sSQL)
+
+F.Intrinsic.UI.Msgbox(V.Local.sSQL,"Success!")
+
+F.Intrinsic.Control.End
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(Error,"SubRoutine",V.Ambient.CurrentSubroutine,"eNumber",V.Ambient.ErrorNumber,"eDescription",V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.ExportFile.End
+
+Program.Sub.Error.Start
+V.Local.sError.Declare
+V.Local.iRet.Declare
+V.Local.sSep.Declare
+
+F.Intrinsic.String.Build("-------------------------------------------------------------------------------------",,V.Local.sSep)
+F.Intrinsic.String.Build("({5}-{6}){0}{7}{0}Project: {4}{0}{7}{0}Sub: {1}{0}Error: {2}, {3}", V.Ambient.NewLine, V.Args.SubRoutine, V.Args.eNumber, V.Args.eDescription,V.Caller.ScriptFile,V.Ambient.Date, V.Ambient.Time,V.Local.sSep,V.Local.sError)
+F.Intrinsic.UI.Msgbox(V.Local.sError,"Error",V.Local.iRet)
+Program.Sub.Error.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$tsmith$}$20210712142201969$}$xqPbj9atw05FglvzeFsZ9cqXP+qvG6tXV9Pfl2mwEkAkmNIEmIiT3v6ht5Y/rLpeD5xD0Zh1byQ=
+Program.Sub.Comments.End
